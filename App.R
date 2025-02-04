@@ -15,9 +15,10 @@ generate_square_vertices <- function(x, y, side) {
 }
 
 # Generate unique labels (1-9, then A-Z)
-generate_label <- function(n) {
+generate_label <- function(excl) {
   labels <- c(as.character(1:9), LETTERS)
-  labels[n]
+  labels[!(labels %in% excl)]
+  labels[1]
 }
 
 # Check direction of sequence
