@@ -17,8 +17,9 @@ generate_square_vertices <- function(x, y, side) {
 # Generate unique labels (1-9, then A-Z)
 generate_label <- function(excl) {
   labels <- c(as.character(1:9), LETTERS)
-  labels[!(labels %in% excl)]
-  labels[1]
+  print(excl)
+  print(labels[!(labels %in% excl)])
+  labels[!(labels %in% excl)][1]
 }
 
 # Check direction of sequence
@@ -183,7 +184,8 @@ server <- function(input, output, session) {
   
   observeEvent(input$add, {
     existing <- squares()
-    new_label <- generate_label(nrow(existing) + 1)
+    # new_label <- generate_label(nrow(existing) + 1)
+    new_label <- generate_label(existing$label)
     
     # Ensure non-overlapping placement
     new_x <- input$x
@@ -302,9 +304,10 @@ server <- function(input, output, session) {
     click <- input$plot_click
     if (!is.null(click)) {
       existing <- squares()
-      new_label <- generate_label(nrow(existing) + 1)
-      new_x <- click$x
-      new_y <- click$y
+      # new_label <- generate_label(nrow(existing) + 1)
+      new_label <- generate_label(existing$label)
+      new_x <- round(click$x)
+      new_y <- round(click$y)
       new_side <- input$side
       
       # Check for overlap
