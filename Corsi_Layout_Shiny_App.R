@@ -1,6 +1,7 @@
 library(shiny)
 library(ggplot2)
 library(dplyr)
+library(shinyjs)
 
 # Function to compute square vertices
 generate_square_vertices <- function(x, y, side) {
@@ -19,7 +20,75 @@ generate_label <- function(n) {
   labels[n]
 }
 
+# Check direction of sequence
+add_directional_columns <- function(df) {
+  output <- df %>%
+    rowwise() %>% 
+    mutate(
+      x_TR = generate_square_vertices(x, y, side)$x_TR,
+      y_TR = generate_square_vertices(x, y, side)$y_TR,
+      x_TL = generate_square_vertices(x, y, side)$x_TL,
+      y_TL = generate_square_vertices(x, y, side)$y_TL,
+      x_BR = generate_square_vertices(x, y, side)$x_BR,
+      y_BR = generate_square_vertices(x, y, side)$y_BR,
+      x_BL = generate_square_vertices(x, y, side)$x_BL,
+      y_BL = generate_square_vertices(x, y, side)$y_BL
+    ) %>%
+    ungroup() %>%
+    mutate(
+      left_to_right_next = lead(x) > x,   # TRUE if the next element is to the right
+      left_to_right_previous = lag(x) < x,  # TRUE if the previous element is to the left
+      bottom_to_top_next = lead(y) > y,   # TRUE if the next element is above
+      bottom_to_top_previous = lag(y) < y  # TRUE if the previous element is below
+    ) %>%
+    # tidyr::replace_na(list(
+    #   left_to_right_next = FALSE,
+    #   left_to_right_previous = FALSE,
+    #   bottom_to_top_next = FALSE,
+    #   bottom_to_top_previous = FALSE
+    # )) %>%  # Replace NA values (first or last elements) with FALSE
+    mutate(
+      x1_current = ifelse(left_to_right_next & bottom_to_top_next, x_TL, 
+                  ifelse(!left_to_right_next & bottom_to_top_next, x_BL, 
+                         ifelse(left_to_right_next & !bottom_to_top_next, x_TR, x_BR))),
+      y1_current = ifelse(left_to_right_next & bottom_to_top_next, y_TL, 
+                  ifelse(!left_to_right_next & bottom_to_top_next, y_BL, 
+                         ifelse(left_to_right_next & !bottom_to_top_next, y_TR, y_BR))), 
+      x2_current = ifelse(left_to_right_next & bottom_to_top_next, x_BR, 
+                  ifelse(!left_to_right_next & bottom_to_top_next, x_TR, 
+                         ifelse(left_to_right_next & !bottom_to_top_next, x_BL, x_TL))),
+      y2_current = ifelse(left_to_right_next & bottom_to_top_next, y_BR, 
+                  ifelse(!left_to_right_next & bottom_to_top_next, y_TR, 
+                         ifelse(left_to_right_next & !bottom_to_top_next, y_BL, y_TL))), 
+      x1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_TL), 
+                       ifelse(!left_to_right_next & bottom_to_top_next, lead(x_BL), 
+                              ifelse(left_to_right_next & !bottom_to_top_next, lead(x_TR), lead(x_BR)))),
+      y1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_TL), 
+                       ifelse(!left_to_right_next & bottom_to_top_next, lead(y_BL), 
+                              ifelse(left_to_right_next & !bottom_to_top_next, lead(y_TR), lead(y_BR)))), 
+      x2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_BR), 
+                       ifelse(!left_to_right_next & bottom_to_top_next, lead(x_TR), 
+                              ifelse(left_to_right_next & !bottom_to_top_next, lead(x_BL), lead(x_TL)))),
+      y2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_BR), 
+                       ifelse(!left_to_right_next & bottom_to_top_next, lead(y_TR), 
+                              ifelse(left_to_right_next & !bottom_to_top_next, lead(y_BL), lead(y_TL))))
+    ) %>%
+    select(label, x1_current, y1_current, x2_current, y2_current, x1_next, y1_next, x2_next, y2_next) %>% 
+    filter(!is.na(x1_current))
+  print(output)
+  
+  output <- output %>%
+    tidyr::pivot_longer(cols = contains("_"),
+                        names_to = c(".value", "element"), 
+                        names_sep = "_")
+  
+  return(output)
+}
+
+
 ui <- fluidPage(
+  useShinyjs(), 
+  
   tags$head(
     tags$style(HTML(
       ".form-control { height:auto; padding:3px 5px;}"
@@ -41,7 +110,7 @@ ui <- fluidPage(
                  column(4, style = "padding-left: 2px;", numericInput("side", "Side length:", value = 50, min = 10),),
                ),
                actionButton("add", "Add Square"),
-               downloadButton("download", "Download Data"),
+               actionButton("update", "Update Squares", disabled = TRUE),
                uiOutput("square_controls")
       ),
       width = 4
@@ -50,11 +119,22 @@ ui <- fluidPage(
     mainPanel(
       plotOutput("plot", click = "plot_click", brush = "plot_brush", dblclick = "plot_dblclick"),
       verbatimTextOutput("error_message"),
+      div(
+        fluidRow(
+          column(5, textInput("line_path", value = "", placeholder = "Sequence (e.g., 38A4):", label = NULL)),
+          column(4, textInput("overlap_path", value = "", placeholder = "Overlap pair: ", label = NULL)),
+          column(3, actionButton("draw_line", "Draw Line", style = "height: 100%;")),
+        )
+      ),
+      verbatimTextOutput("overlap_text"),
       fluidRow(
-        column(6, textInput("line_path", "Enter square sequence (e.g., 38A4):", "")),
-        # column(2, style = "padding-left: 2px;", actionButton("draw_line", "Draw Line")),
-        column(4, textInput("save_plot_name", "Enter a file name:", "")),
-        column(2, style = "padding-left: 2px;", actionButton("save_ggplot", "Save Plot"))
+        column(6, textInput("save_plot_name", value = "", placeholder = "Enter a name for the plot file", label = NULL)),
+        column(3, actionButton("save_ggplot", "Save Plot", style = "height: 100%;", disabled = TRUE)),
+        column(3, downloadButton('download_gglot','Download Plot', style = "height: 100%;", disabled = TRUE))
+      ),
+      fluidRow(
+        column(6, fileInput("upload_csv", "Upload CSV File", accept = ".csv")),
+        column(6, downloadButton("download", "Download CSV", style = "height: 100%;"))
       ),
       tableOutput("table"),
       width = 8
@@ -65,8 +145,40 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   squares <- reactiveVal(data.frame(label = character(), x = numeric(), y = numeric(), side = numeric()))
   error_message <- reactiveVal("")
+  overlap_text <- reactiveVal("TODO! Text will be : Overlap area = XXX ")
+  plot_file_name <- reactive(input$save_plot_name)
   line_data <- reactiveVal(NULL)
+  line_data_overlap <- reactiveVal(NULL)
   line_path_labels <- reactive(strsplit(input$line_path, "")[[1]])
+  
+  observeEvent(squares(), {
+    updateActionButton(session, "update", disabled = nrow(squares()) == 0)
+  })
+  
+  observe({
+    if (nrow(squares()) == 0) {
+      shinyjs::disable("download")
+      shinyjs::disable("download_gglot")
+    } else {
+      shinyjs::enable("download")
+      shinyjs::enable("download_gglot")
+    }
+  })
+  
+  observeEvent(plot_file_name(), {
+    updateActionButton(session, "save_ggplot", disabled = plot_file_name() == "")
+  })
+  
+  observeEvent(input$upload_csv, {
+    req(input$upload_csv)
+    df <- read.csv(input$upload_csv$datapath, stringsAsFactors = FALSE)
+    if (!all(c("label", "x", "y", "side") %in% names(df))) {
+      error_message("Error: CSV file must contain columns 'label', 'x', 'y', 'side'")
+    } else {
+      squares(df)
+      error_message("")
+    }
+  })
   
   observeEvent(input$add, {
     existing <- squares()
@@ -111,6 +223,7 @@ server <- function(input, output, session) {
   draw_line_func <- function() {
     existing <- squares()
     labels <- line_path_labels()
+    labels_overlap <- strsplit(input$overlap_path, "")[[1]]
     
     if (!all(labels %in% existing$label)) {
       missing_labels <- labels[!(labels %in% existing$label)]
@@ -121,12 +234,21 @@ server <- function(input, output, session) {
       line_data(existing %>% filter(label %in% labels) %>% arrange(match(label, labels)))
     }
     
+    if (!all(labels_overlap %in% existing$label)) {
+      missing_labels <- labels_overlap[!(labels_overlap %in% existing$label)]
+      error_message(paste("Error: The following labels do not exist:", paste(missing_labels, collapse = ", ")))
+      return()
+    } else {
+      error_message("")
+      line_data_overlap(existing %>% filter(label %in% labels_overlap) %>% arrange(match(label, labels_overlap)))
+    }
+    
     output$plot <- renderPlot({
       req(nrow(squares()) > 0)
       
       # plot_data <- squares()
       line_coords <- line_data()
-      
+      line_coords_overlap <- line_data_overlap()
       p <- make_plot()
       
       if (!is.null(line_coords) && nrow(line_coords) > 1) {
@@ -141,12 +263,38 @@ server <- function(input, output, session) {
           geom_point(data = line_coords[1, ], aes(x = x, y = y), color = "blue", size = 4)
       }
       
+      if (!is.null(line_coords_overlap) && nrow(line_coords_overlap) > 1) {
+        line_coords_overlap <- add_directional_columns(line_coords_overlap)
+        print(line_coords_overlap)
+        
+        p <- p +
+          geom_line(
+            data = line_coords_overlap,
+            aes(x = x1, y = y1),
+            color = "red",
+            linetype = 'dashed',
+            linewidth = 0.5
+          ) + 
+          geom_line(
+            data = line_coords_overlap,
+            aes(x = x2, y = y2),
+            color = "red",
+            linetype = 'dashed',
+            linewidth = 0.5
+          ) 
+      }
+      
       p
     })
   }
   
-  # observeEvent(input$draw_line, {
-  #   draw_line_func()
+  
+  observeEvent(input$draw_line, {
+    draw_line_func()
+  })
+  # 
+  # observeEvent(input$overlap_path_button, { 
+  # 
   # })
   
   observeEvent(input$plot_click, {
@@ -207,47 +355,16 @@ server <- function(input, output, session) {
   #   })
   # })
 
-  observe({
-    inputs <- reactiveValuesToList(input)
+  observeEvent(input$update, {
     existing <- squares()
     req(nrow(existing) > 0)
-  
+    
     for (i in seq_len(nrow(existing))) {
-      req(
-        !is.null(inputs[[paste0("x_", existing$label[i])]]),
-        !is.null(inputs[[paste0("y_", existing$label[i])]]),
-        !is.null(inputs[[paste0("side_", existing$label[i])]]),
-        !is.null(inputs[[paste0("label_", existing$label[i])]])
-      )
-
-      
-      for (i in seq_len(nrow(existing))) {
-        observeEvent(input[[paste0("x_", existing$label[i])]], {
-          updated_data <- squares()
-          updated_data$x[i] <- input[[paste0("x_", existing$label[i])]]
-          squares(updated_data)
-        }, ignoreInit = TRUE)
-        
-        observeEvent(input[[paste0("y_", existing$label[i])]], {
-          updated_data <- squares()
-          updated_data$y[i] <- input[[paste0("y_", existing$label[i])]]
-          squares(updated_data)
-        }, ignoreInit = TRUE)
-        
-        observeEvent(input[[paste0("side_", existing$label[i])]], {
-          updated_data <- squares()
-          updated_data$side[i] <- input[[paste0("side_", existing$label[i])]]
-          squares(updated_data)
-        }, ignoreInit = TRUE)
-        
-        observeEvent(input[[paste0("label_", existing$label[i])]], {
-          updated_data <- squares()
-          updated_data$label[i] <- input[[paste0("label_", existing$label[i])]]
-          squares(updated_data)
-        }, ignoreInit = TRUE)
-      }
+      existing$x[i] <- input[[paste0("x_", existing$label[i])]]
+      existing$y[i] <- input[[paste0("y_", existing$label[i])]]
+      existing$side[i] <- input[[paste0("side_", existing$label[i])]]
+      existing$label[i] <- input[[paste0("label_", existing$label[i])]]
     }
-
     squares(existing)
     draw_line_func()
   })
@@ -273,6 +390,10 @@ server <- function(input, output, session) {
     error_message()
   })
   
+  output$overlap_text <- renderText({
+    overlap_text()
+  })
+  
   observeEvent(input$save_ggplot, {
     file_name <- sprintf("%s_%s.png", input$save_plot_name, ifelse(input$line_path == "", "blank", input$line_path))
     save_dir <- "./Plots"
@@ -281,6 +402,16 @@ server <- function(input, output, session) {
            plot = last_plot(), 
            width = height_plot*input$xlim/input$ylim, height = height_plot, dpi = 300)
   })
+  
+  output$download_gglot <- downloadHandler(
+    filename = function(){sprintf("%s_%s.png", input$save_plot_name, ifelse(input$line_path == "", "blank", input$line_path))},
+    content = function(file){
+      ggsave(file, 
+             plot = last_plot(), 
+             width = 6*input$xlim/input$ylim, 
+             height = 6, 
+             dpi = 300)
+    })
   
   output$download <- downloadHandler(
     filename = function() { "squares_data.csv" },
