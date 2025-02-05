@@ -4,6 +4,7 @@ library(dplyr)
 library(shinyjs)
 library(stringr)
 library(bslib)
+library(sf)
 
 # Function to compute square vertices
 generate_square_vertices <- function(x, y, side) {
@@ -113,29 +114,31 @@ make_clutterness_dataframe <- function(squares_df, sequence_df) {
       x = c(x1[1], x2, x1[2], x1[1]), 
       y = c(y1[1], y2, y1[2], y1[1])) %>% 
     arrange(edge_number, vertex_id)
-  intersections <- sequence_df_2 %>% 
-    group_by(edge_number, edge) %>% 
-    dplyr::reframe(find_intersecting_squares(squares_df[!(squares_df$label %in% strsplit(edge, "")[[1]]),], 
+  # print('wewowoweowowow')
+  # print(squares_df[!(squares_df$label %in% strsplit("16", "")[[1]]),])
+  intersections <- sequence_df_2 %>%
+    group_by(edge_number, edge) %>%
+    dplyr::reframe(find_intersecting_squares(squares_df[!(squares_df$label %in% strsplit(edge, "")[[1]]),],
                                              data.frame(x = x, y = y)))
-  # intersections <- intersections %>% 
-  #   rowwise() %>%
-  #   mutate(shared_clutter = ifelse(intersections %>% 
-  #                                    count(label_count = label) %>% 
-  #                                    filter(label_count == label) %>% 
-  #                                    .$n > 1, "Shared", "Not Shared"))
+  intersections <- intersections %>%
+    rowwise() %>%
+    mutate(shared_clutter = ifelse(intersections %>%
+                                     count(label_count = label) %>%
+                                     filter(label_count == label) %>%
+                                     .$n > 1, "Shared", "Not Shared"))
   
   intersections_count <- intersections %>% 
-    count(edge_number, edge, name = "n_clutter_squares") %>% 
-    merge(intersections %>% select(edge, label)) %>% 
-    group_by(edge_number, edge, n_clutter_squares) %>% 
-    dplyr::summarize(clutter_square_labels = paste0(label, collapse = ", ")) %>% 
+    count(edge_number, edge, name = "n_clutter_squares") %>%
+    merge(intersections %>% select(edge, label)) %>%
+    group_by(edge_number, edge, n_clutter_squares) %>%
+    dplyr::summarize(clutter_square_labels = paste0(label, collapse = ", ")) %>%
     ungroup() %>%
     rbind(data.frame(
-      edge_number = unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge_number), 
-      edge = unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge), 
+      edge_number = unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge_number),
+      edge = unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge),
       n_clutter_squares = rep(0, length(unique(unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge)))),
       clutter_square_labels = rep("", length(unique(unique(sequence_df_2[!(sequence_df_2$edge %in% .$edge),]$edge))))
-    )) %>% 
+    )) %>%
     arrange(edge_number)
   
   return(list(clutterness_df = intersections,
