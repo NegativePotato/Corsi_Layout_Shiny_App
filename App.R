@@ -5,6 +5,7 @@ library(shinyjs)
 library(stringr)
 library(bslib)
 library(sf)
+library(ggforce)
 
 # Function to compute square vertices
 generate_square_vertices <- function(x, y, side) {
@@ -17,6 +18,25 @@ generate_square_vertices <- function(x, y, side) {
   )
 }
 
+generate_circle_segment_points <- function(x_start, y_start, r_start,
+                                           x_end, y_end, r_end) {
+  slope = (y_end-y_start)/(x_end - x_start)
+  dx_start = r_start/(sqrt(1 + 1/(slope^2)))
+  dy_start = sqrt(r_start^2 - dx_start^2)
+  dx_end = r_end/(sqrt(1 + 1/(slope^2)))
+  dy_end = sqrt(r_end^2 - dx_end^2)
+  data.frame(
+    x1_current = x_start + dx_start,
+    y1_current = y_start - sign(slope)*dy_start,
+    x2_current = x_start - dx_start,
+    y2_current = y_start + sign(slope)*dy_start, 
+    x1_next = x_end + dx_end,
+    y1_next = y_end - sign(slope)*dy_end,
+    x2_next = x_end - dx_end,
+    y2_next = y_end + sign(slope)*dy_end
+  )
+}
+
 # Generate unique labels (1-9, then A-Z)
 generate_label <- function(excl) {
   labels <- c(as.character(1:9), LETTERS)
@@ -25,59 +45,66 @@ generate_label <- function(excl) {
 }
 
 # Check direction of sequence
-add_directional_columns <- function(df) {
-  output <- df %>%
-    # rowwise() %>% 
-    # mutate(
-    #   x_TR = generate_square_vertices(x, y, side)$x_TR,
-    #   y_TR = generate_square_vertices(x, y, side)$y_TR,
-    #   x_TL = generate_square_vertices(x, y, side)$x_TL,
-    #   y_TL = generate_square_vertices(x, y, side)$y_TL,
-    #   x_BR = generate_square_vertices(x, y, side)$x_BR,
-    #   y_BR = generate_square_vertices(x, y, side)$y_BR,
-    #   x_BL = generate_square_vertices(x, y, side)$x_BL,
-    #   y_BL = generate_square_vertices(x, y, side)$y_BL
-    # ) %>%
-    # ungroup() %>%
-    mutate(
-      left_to_right_next = lead(x) > x,   # TRUE if the next element is to the right
-      left_to_right_previous = lag(x) < x,  # TRUE if the previous element is to the left
-      bottom_to_top_next = lead(y) > y,   # TRUE if the next element is above
-      bottom_to_top_previous = lag(y) < y  # TRUE if the previous element is below
-    ) %>%
-    # tidyr::replace_na(list(
-    #   left_to_right_next = FALSE,
-    #   left_to_right_previous = FALSE,
-    #   bottom_to_top_next = FALSE,
-    #   bottom_to_top_previous = FALSE
-    # )) %>%  # Replace NA values (first or last elements) with FALSE
-    mutate(
-      x1_current = ifelse(left_to_right_next & bottom_to_top_next, x_TL,
-                          ifelse(!left_to_right_next & bottom_to_top_next, x_BL,
-                                 ifelse(left_to_right_next & !bottom_to_top_next, x_TR, x_BR))),
-      y1_current = ifelse(left_to_right_next & bottom_to_top_next, y_TL, 
-                          ifelse(!left_to_right_next & bottom_to_top_next, y_BL, 
-                                 ifelse(left_to_right_next & !bottom_to_top_next, y_TR, y_BR))), 
-      x2_current = ifelse(left_to_right_next & bottom_to_top_next, x_BR, 
-                          ifelse(!left_to_right_next & bottom_to_top_next, x_TR, 
-                                 ifelse(left_to_right_next & !bottom_to_top_next, x_BL, x_TL))),
-      y2_current = ifelse(left_to_right_next & bottom_to_top_next, y_BR, 
-                          ifelse(!left_to_right_next & bottom_to_top_next, y_TR, 
-                                 ifelse(left_to_right_next & !bottom_to_top_next, y_BL, y_TL))), 
-      x1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_TL), 
-                       ifelse(!left_to_right_next & bottom_to_top_next, lead(x_BL), 
-                              ifelse(left_to_right_next & !bottom_to_top_next, lead(x_TR), lead(x_BR)))),
-      y1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_TL), 
-                       ifelse(!left_to_right_next & bottom_to_top_next, lead(y_BL), 
-                              ifelse(left_to_right_next & !bottom_to_top_next, lead(y_TR), lead(y_BR)))), 
-      x2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_BR), 
-                       ifelse(!left_to_right_next & bottom_to_top_next, lead(x_TR), 
-                              ifelse(left_to_right_next & !bottom_to_top_next, lead(x_BL), lead(x_TL)))),
-      y2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_BR), 
-                       ifelse(!left_to_right_next & bottom_to_top_next, lead(y_TR), 
-                              ifelse(left_to_right_next & !bottom_to_top_next, lead(y_BL), lead(y_TL)))), 
-      edge = paste0(label, lead(label))
-    ) %>%
+add_directional_columns <- function(df, shape_type) {
+  output <- df 
+  print("Mambo n5")
+  print(output)
+
+  if (shape_type == "Circles") {
+    output <- output %>%
+      mutate(
+        x1_current = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$x1_current,
+        y1_current = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$y1_current,
+        x2_current = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$x2_current,
+        y2_current = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$y2_current,
+        x1_next = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$x1_next,
+        y1_next = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$y1_next,
+        x2_next = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$x2_next,
+        y2_next = generate_circle_segment_points(x, y, side/2, lead(x), lead(y), lead(side)/2)$y2_next,
+        edge = paste0(label, lead(label))
+      ) 
+  }
+
+  if (shape_type == "Squares") {
+    output <- output %>%
+      mutate(
+        left_to_right_next = lead(x) > x,   # TRUE if the next element is to the right
+        left_to_right_previous = lag(x) < x,  # TRUE if the previous element is to the left
+        bottom_to_top_next = lead(y) > y,   # TRUE if the next element is above
+        bottom_to_top_previous = lag(y) < y  # TRUE if the previous element is below
+      )  %>% 
+      mutate(
+        x1_current = ifelse(left_to_right_next & bottom_to_top_next, x_TL,
+                            ifelse(!left_to_right_next & bottom_to_top_next, x_BL,
+                                   ifelse(left_to_right_next & !bottom_to_top_next, x_TR, x_BR))),
+        y1_current = ifelse(left_to_right_next & bottom_to_top_next, y_TL, 
+                            ifelse(!left_to_right_next & bottom_to_top_next, y_BL, 
+                                   ifelse(left_to_right_next & !bottom_to_top_next, y_TR, y_BR))), 
+        x2_current = ifelse(left_to_right_next & bottom_to_top_next, x_BR, 
+                            ifelse(!left_to_right_next & bottom_to_top_next, x_TR, 
+                                   ifelse(left_to_right_next & !bottom_to_top_next, x_BL, x_TL))),
+        y2_current = ifelse(left_to_right_next & bottom_to_top_next, y_BR, 
+                            ifelse(!left_to_right_next & bottom_to_top_next, y_TR, 
+                                   ifelse(left_to_right_next & !bottom_to_top_next, y_BL, y_TL))), 
+        x1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_TL), 
+                         ifelse(!left_to_right_next & bottom_to_top_next, lead(x_BL), 
+                                ifelse(left_to_right_next & !bottom_to_top_next, lead(x_TR), lead(x_BR)))),
+        y1_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_TL), 
+                         ifelse(!left_to_right_next & bottom_to_top_next, lead(y_BL), 
+                                ifelse(left_to_right_next & !bottom_to_top_next, lead(y_TR), lead(y_BR)))), 
+        x2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(x_BR), 
+                         ifelse(!left_to_right_next & bottom_to_top_next, lead(x_TR), 
+                                ifelse(left_to_right_next & !bottom_to_top_next, lead(x_BL), lead(x_TL)))),
+        y2_next = ifelse(left_to_right_next & bottom_to_top_next, lead(y_BR), 
+                         ifelse(!left_to_right_next & bottom_to_top_next, lead(y_TR), 
+                                ifelse(left_to_right_next & !bottom_to_top_next, lead(y_BL), lead(y_TL)))), 
+        edge = paste0(label, lead(label))
+      )
+  }
+  print("output")
+  print(output)
+  print(shape_type)
+  output <- output %>%
     select(label, edge, x1_current, y1_current, x2_current, y2_current, x1_next, y1_next, x2_next, y2_next) %>% 
     filter(!is.na(x1_current))
   print(output)
@@ -102,24 +129,74 @@ find_intersecting_squares <- function(squares_df, polygon_coords) {
   squares_df[apply(intersections, 1, any), ]
 }
 
+# Function to find circles intersecting with edges
+circle_line_intersections <- function(circles, edges) {
+  # For each combination of edge and circle, calculate the distance from the circle's center
+  # to the line segment defined by (x1, y1) and (x2, y2)
+  intersections <- edges %>%
+    select(-label) %>%
+    tidyr::crossing(circles) %>%  # Cross join: all combinations of edges and circles
+    mutate(
+      # Calculate vector components of the edge
+      dx = x2 - x1,
+      dy = y2 - y1,
+      seg_len2 = dx^2 + dy^2,
+      
+      # Compute the projection factor t of the circle's center onto the line
+      t = if_else(seg_len2 == 0, 0, ((x - x1) * dx + (y - y1) * dy) / seg_len2),
+      # Clamp t between 0 and 1 to remain on the segment
+      t = pmax(0, pmin(1, t)),
+      
+      # Closest point on the segment to the circle's center
+      closest_x = x1 + t * dx,
+      closest_y = y1 + t * dy,
+      
+      # Distance from the circle's center to this closest point
+      dist = sqrt((x - closest_x)^2 + (y - closest_y)^2),
+      
+      # Compute the circle's radius (side is the diameter)
+      radius = side / 2
+    ) %>%
+    # Keep only those rows where the distance is less than or equal to the radius
+    filter(dist <= radius) %>%
+    # Select the desired output columns
+    select(edge_number, edge, label, x, y, side)
+  
+  return(intersections)
+}
 
-make_clutterness_dataframe <- function(squares_df, sequence_df) {
-  sequence_df_2 <- sequence_df %>%
-    mutate(edge_number = rep(seq(nrow(sequence_df)/2), each = 2)) %>%
-    group_by(edge) %>% 
-    dplyr::reframe(
-      edge_number = rep(edge_number[1], 5),
-      edge = rep(edge[1], 5),
-      vertex_id = seq(5),
-      x = c(x1[1], x2, x1[2], x1[1]), 
-      y = c(y1[1], y2, y1[2], y1[1])) %>% 
-    arrange(edge_number, vertex_id)
-  # print('wewowoweowowow')
-  # print(squares_df[!(squares_df$label %in% strsplit("16", "")[[1]]),])
-  intersections <- sequence_df_2 %>%
-    group_by(edge_number, edge) %>%
-    dplyr::reframe(find_intersecting_squares(squares_df[!(squares_df$label %in% strsplit(edge, "")[[1]]),],
-                                             data.frame(x = x, y = y)))
+make_clutterness_dataframe <- function(squares_df, sequence_df, shape_type = "Circles") {
+  print("Mais putain R est tellement debile")
+  print(sequence_df)
+  print("rant over")
+  if (shape_type == "Squares") {
+    sequence_df_2 <- sequence_df %>%
+      mutate(edge_number = rep(seq(nrow(sequence_df)/2), each = 2)) %>%
+      group_by(edge) %>% 
+      dplyr::reframe(
+        edge_number = rep(edge_number[1], 5),
+        edge = rep(edge[1], 5),
+        vertex_id = seq(5),
+        x = c(x1[1], x2, x1[2], x1[1]), 
+        y = c(y1[1], y2, y1[2], y1[1])) %>% 
+      arrange(edge_number, vertex_id)
+    
+    intersections <- sequence_df_2 %>%
+      group_by(edge_number, edge) %>%
+      dplyr::reframe(find_intersecting_squares(squares_df[!(squares_df$label %in% strsplit(edge, "")[[1]]),],
+                                               data.frame(x = x, y = y)))
+  } else if (shape_type == "Circles") {
+    sequence_df_2 <- sequence_df %>%
+      mutate(edge_number = rep(seq(nrow(sequence_df)/2), each = 2)) 
+    
+    intersections <- circle_line_intersections(edges = sequence_df_2, 
+                                               circles = squares_df)
+    print(intersections)
+  } else {
+    warning("Shape type not supported")
+  }
+  
+
   intersections <- intersections %>%
     rowwise() %>%
     mutate(shared_clutter = ifelse(intersections %>%
@@ -158,7 +235,7 @@ ui <- page_fluid(
   title = "Corsi layout creator tool",
   layout_sidebar(
     sidebar = sidebar(
-      width = 300, 
+      width = 400, 
       fluidRow(
         column(6, style = "padding-right: 2px;", numericInput("xlim", "X-axis limit:", value = 500, min = 100, step = 50)),
         column(6, style = "padding-left: 2px;", numericInput("ylim", "Y-axis limit:", value = 500, min = 100, step = 50))
@@ -166,10 +243,16 @@ ui <- page_fluid(
       fluidRow(
         column(4, style = "padding-right: 2px;", numericInput("x", "Square center X:", value = 250)),
         column(4, style = "padding-left: 2px; padding-right: 2px;", numericInput("y", "Square center Y:", value = 250)),
-        column(4, style = "padding-left: 2px;", numericInput("side", "Side length:", value = 50, min = 10),)
+        column(4, style = "padding-left: 2px;", numericInput("side", "Side length:", value = 50, min = 10))
       ),
-      actionButton("add", "Add Square"),
-      actionButton("update", "Update Squares", disabled = TRUE),
+      fluidRow(
+        column(4, style = "padding-right: 2px;", textInput("target_color", "Target Color", value = "#1591FF")),
+        column(4, style = "padding-left: 2px; padding-right: 2px;", textInput("inducer_color", "Inducer Color", value = "#FF5493")),
+        column(4, style = "padding-left: 2px;", textInput("distractor_color", "Distractor Color", value = "#FFD451"))
+      ),
+      selectInput("shape_type", "Element Shape", choices = c("Squares", "Circles")),
+      actionButton("add", "Add Shape"),
+      actionButton("update", "Update Shape", disabled = TRUE),
       uiOutput("square_controls")
     ),
     card(
@@ -187,13 +270,23 @@ ui <- page_fluid(
     verbatimTextOutput("error_message"),
     card(
       card_header("Draw Line and Clutterness"),
+      textInput("line_path", value = "", placeholder = "Sequence (e.g., 38A4):", label = NULL),
+      textInput("overlap_path", value = "", placeholder = "Overlap Sequence: ", label = NULL),
+      numericInput("distance_from_end_points", value = 0.33, label = "Distance from endpoint (e.g. 0.4)"),
+      numericInput("distance_from_segment", value = 1.5, label = "Distance from segment in # of r"),
+      textInput("inducer_segment", value = "", label = "Segment where to add/remove inducers", placeholder = "14"),
       fluidRow(
-        column(5, textInput("line_path", value = "", placeholder = "Sequence (e.g., 38A4):", label = NULL)),
-        column(4, textInput("overlap_path", value = "", placeholder = "Overlap pair: ", label = NULL)),
-        column(3, actionButton("draw_line", "Draw Line")),
-      ), 
+        column(6, selectInput("which_inducers", "Which to Draw", choices = c("First", "Second", "Both"))),
+        column(6, selectInput("side_condition", "Which side?", choices = c("Side 1", "Side 2")))
+        ),
+      fluidRow(
+        column(3, actionButton("draw_line_only", "Draw Line Only")),
+        column(3, actionButton("draw_line_and_clutterness", "Draw Line & Clutterness Lines")),
+        column(3, actionButton("generate_inducers", "Generate Inducers")),
+        column(3, actionButton("remove_inducers", "Remove Inducers"))
+      )
       # verbatimTextOutput("overlap_text")
-    ), 
+    ),
     card(
       card_header("Layout info dataframe"),
       fluidRow(
@@ -223,78 +316,9 @@ ui <- page_fluid(
 )
 
 
-
-# ui <- fluidPage(
-#   useShinyjs(), 
-#   
-#   tags$head(
-#     tags$style(HTML(
-#       ".form-control { height:auto; padding:3px 5px;}"
-#     ))
-#   ),
-# 
-#   titlePanel("Corsi layout creator tool"),
-#   
-#   sidebarLayout(
-#     sidebarPanel(
-#       tags$div(style = "height: 95vh; overflow-y: auto;",  # Make sidebar scrollable
-#                fluidRow(
-#                  column(6, style = "padding-right: 2px;", numericInput("xlim", "X-axis limit:", value = 500, min = 100, step = 50)),
-#                  column(6, style = "padding-left: 2px;", numericInput("ylim", "Y-axis limit:", value = 500, min = 100, step = 50))
-#                ),
-#                fluidRow(
-#                  column(4, style = "padding-right: 2px;", numericInput("x", "Square center X:", value = 250)),
-#                  column(4, style = "padding-left: 2px; padding-right: 2px;", numericInput("y", "Square center Y:", value = 250)),
-#                  column(4, style = "padding-left: 2px;", numericInput("side", "Side length:", value = 50, min = 10),),
-#                ),
-#                actionButton("add", "Add Square"),
-#                actionButton("update", "Update Squares", disabled = TRUE),
-#                uiOutput("square_controls")
-#       ),
-#       width = 4
-#     ),
-#     
-#     mainPanel(
-#       plotOutput("plot", click = "plot_click", brush = "plot_brush", dblclick = "plot_dblclick"),
-#       verbatimTextOutput("error_message"),
-#       div(
-#         fluidRow(
-#           column(5, textInput("line_path", value = "", placeholder = "Sequence (e.g., 38A4):", label = NULL)),
-#           column(4, textInput("overlap_path", value = "", placeholder = "Overlap pair: ", label = NULL)),
-#           column(3, actionButton("draw_line", "Draw Line", style = "height: 100%;")),
-#         )
-#       ),
-#       verbatimTextOutput("overlap_text"),
-#       fluidRow(
-#         column(6, textInput("save_plot_name", value = "", placeholder = "Enter a name for the plot file", label = NULL)),
-#         column(3, actionButton("save_ggplot", "Save Plot", style = "height: 100%;", disabled = TRUE)),
-#         column(3, downloadButton('download_gglot','Download Plot', style = "height: 100%;", disabled = TRUE))
-#       ),
-#       fluidRow(
-#         column(6, fileInput("upload_csv", "Upload CSV File Squares", accept = ".csv")),
-#         column(6, downloadButton("download", "Download CSV", style = "height: 100%;"))
-#       ),
-#       tableOutput("table"),
-#       fluidRow(
-#         column(6, fileInput("upload_csv_sequence", "Upload CSV File Sequence", accept = ".csv")),
-#         column(6, downloadButton("download_csv_sequence", "Download CSV Sequence", style = "height: 100%;"))
-#       ),
-#       tableOutput("sequence_table"),
-#       fluidRow(
-#         # column(6, fileInput("upload_csv_clutterness", "Upload CSV File Sequence", accept = ".csv")),
-#         column(6, downloadButton("download_csv_clutterness", "Download CSV Clutterness", style = "height: 100%;")),
-#         # column(6, fileInput("upload_csv_sequence", "Upload CSV File Sequence", accept = ".csv")),
-#         column(6, downloadButton("download_csv_clutterness_count", "Download CSV Clutterness count", style = "height: 100%;"))
-#       ),
-#       tableOutput("clutterness_df"),
-#       tableOutput("clutterness_count_df"),
-#       width = 8
-#     )
-#   )
-# )
-
 server <- function(input, output, session) {
-  squares <- reactiveVal(data.frame(label = character(), x = numeric(), y = numeric(), side = numeric()))
+  squares <- reactiveVal(data.frame(label = character(), x = numeric(), y = numeric(), 
+                                    side = numeric(), element_type = character()))
   sequence_table <- reactiveVal(data.frame(label = character(), edge = character(), element = character(),
                                            x1 = numeric(), y1 = numeric(), 
                                            x2 = numeric(), y2 = numeric()))
@@ -401,13 +425,13 @@ server <- function(input, output, session) {
     }
   )
   
-  add_new_square <- function(new_label, new_x, new_y, new_side) {
+  add_new_square <- function(new_label, new_x, new_y, new_side, new_element_type) {
     existing <- squares()
     # new_label <- generate_label(existing$label)
     # new_x <- round(click$x)
     # new_y <- round(click$y)
     # new_side <- input$side
-    
+    # browser()
     # Check for overlap
     overlap <- existing %>% 
       filter(abs(x - new_x) < (side/2 + new_side/2) & abs(y - new_y) < (side/2 + new_side/2))
@@ -436,6 +460,7 @@ server <- function(input, output, session) {
                              x = new_x, 
                              y = new_y, 
                              side = new_side, 
+                             element_type = new_element_type, 
                              stringsAsFactors = FALSE) %>% 
         rowwise() %>% 
         mutate(
@@ -457,10 +482,11 @@ server <- function(input, output, session) {
   observeEvent(input$add, {
     existing <- squares()
     # new_label <- generate_label(nrow(existing) + 1)
-    add_new_square(new_label <- generate_label(existing$label), 
-                   new_x <- input$x, 
-                   new_y <- input$y, 
-                   new_side <- input$side)
+    add_new_square(new_label = generate_label(existing$label), 
+                   new_x = input$x, 
+                   new_y = input$y, 
+                   new_side = input$side, 
+                   new_element_type = "Distractor")
   })
   
   observeEvent(input$plot_click, {
@@ -468,10 +494,11 @@ server <- function(input, output, session) {
     if (!is.null(click)) {
       existing <- squares()
       # new_label <- generate_label(nrow(existing) + 1)
-      add_new_square(new_label <- generate_label(existing$label), 
-                     new_x <- round(click$x), 
-                     new_y <- round(click$y), 
-                     new_side <- input$side)
+      add_new_square(new_label = generate_label(existing$label), 
+                     new_x = round(click$x), 
+                     new_y = round(click$y), 
+                     new_side = input$side, 
+                     new_element_type = "Distractor")
     }
   })
   
@@ -492,6 +519,7 @@ server <- function(input, output, session) {
       existing$x[i] <- input[[paste0("x_", existing$label[i])]]
       existing$y[i] <- input[[paste0("y_", existing$label[i])]]
       existing$side[i] <- input[[paste0("side_", existing$label[i])]]
+      existing$element_type[i] <- input[[paste0("element_type_", existing$label[i])]]
       existing$label[i] <- input[[paste0("label_", existing$label[i])]]
     }
     
@@ -505,11 +533,15 @@ server <- function(input, output, session) {
         x_BR = generate_square_vertices(x, y, side)$x_BR,
         y_BR = generate_square_vertices(x, y, side)$y_BR,
         x_BL = generate_square_vertices(x, y, side)$x_BL,
-        y_BL = generate_square_vertices(x, y, side)$y_BL
-      ) 
+        y_BL = generate_square_vertices(x, y, side)$y_BL) %>% 
+      ungroup()
     
     squares(existing)
-    draw_line_func(strsplit(input$line_path, "")[[1]], 
+    print("putain numero 1")
+    print(input$line_path)
+    print(input$overlap_path)
+    draw_line_func(existing, 
+                   strsplit(input$line_path, "")[[1]],
                    strsplit(input$overlap_path, "")[[1]])
   })
   
@@ -521,10 +553,12 @@ server <- function(input, output, session) {
       lapply(1:nrow(existing), function(i) {
         fluidRow(
           offset = -10, style='padding:0px;',
-          column(3, style = "padding-right: 2px;", textInput(paste0("label_", existing$label[i]), "Name:", existing$label[i])),
-          column(3, style = "padding-right: 2px; padding-left: 2px;", numericInput(paste0("x_", existing$label[i]), "X:", existing$x[i])),
-          column(3, style = "padding-right: 2px; padding-left: 2px;", numericInput(paste0("y_", existing$label[i]), "Y:", existing$y[i])),
-          column(3, style = "padding-left: 2px;", numericInput(paste0("side_", existing$label[i]), "Side:", existing$side[i]))
+          column(2, style = "padding-right: 2px;", textInput(paste0("label_", existing$label[i]), "Name:", existing$label[i])),
+          column(2, style = "padding-right: 2px; padding-left: 2px;", numericInput(paste0("x_", existing$label[i]), "X:", existing$x[i])),
+          column(2, style = "padding-right: 2px; padding-left: 2px;", numericInput(paste0("y_", existing$label[i]), "Y:", existing$y[i])),
+          column(2, style = "padding-right: 2px; padding-left: 2px;", numericInput(paste0("side_", existing$label[i]), "Side:", existing$side[i])),
+          column(4, style = "padding-left: 2px;", selectInput(paste0("element_type_", existing$label[i]), "Type:", 
+                                                              choices = c("Target", "Inducer", "Distractor")))
         )
       })
     )
@@ -547,18 +581,98 @@ server <- function(input, output, session) {
            width = height_plot*input$xlim/input$ylim, height = height_plot, dpi = 300)
   })
   
+  generate_inducers <- function() {
+    existing <- squares()
+    element_indices <- strsplit(input$inducer_segment, "")[[1]]
+  
+    inducer_position_index_1 = input$distance_from_end_points
+    inducer_position_index_2 = 1 - inducer_position_index_1 
+
+    #change in x coordinate of the current segment
+    x_start <- existing$x[existing$label == element_indices[1]] 
+    y_start <- existing$y[existing$label == element_indices[1]]
+    x_end <- existing$x[existing$label == element_indices[2]] 
+    y_end <- existing$y[existing$label == element_indices[2]]    
+    
+    #change in x coordinate of the current segment
+    da = x_end - x_start 
+    a = abs(da)
+
+    #change in y coordinate of the currentr segment
+    db = y_end - y_start 
+    b = abs(db)
+
+    #compute helper variables to find the inducer coordinates
+    inducer_ref_point_x_1 = (x_start + da*inducer_position_index_1)
+    inducer_ref_point_y_1 = (y_start + db*inducer_position_index_1)
+    inducer_ref_point_x_2 = (x_start + da*inducer_position_index_2)
+    inducer_ref_point_y_2 = (y_start + db*inducer_position_index_2)
+    
+    segment_slope = db/da
+    inducer_line_slope = -1/segment_slope
+    dx_inducer = (input$side*input$distance_from_segment)/sqrt(1+inducer_line_slope^2)
+    dy_inducer = dx_inducer * inducer_line_slope
+    
+    # inducer coordinates
+    if (input$side_condition == "Side 1") {
+      v_1 <- 1
+      v_2 <- -1
+    } else {
+      v_1 <- -1
+      v_2 <- 1      
+    }
+    
+    print("lilililil")
+    browser()
+    if(input$which_inducers %in% c('Both', 'First')) {
+      add_new_square(new_label = generate_label(existing$label), 
+                     new_x = inducer_ref_point_x_1 + v_1*sign(inducer_line_slope)*dx_inducer, 
+                     new_y = inducer_ref_point_y_1 + v_1*sign(inducer_line_slope)*dy_inducer, 
+                     new_side = input$side, 
+                     new_element_type = "Inducer")
+      existing <- squares()
+    }
+    
+    if(input$which_inducers %in% c('Both', 'Second')) {  
+      add_new_square(new_label = generate_label(existing$label), 
+                     new_x = inducer_ref_point_x_2 + v_2*sign(inducer_line_slope)*dx_inducer,
+                     new_y = inducer_ref_point_y_2 + v_2*sign(inducer_line_slope)*dy_inducer,
+                     new_side = input$side, 
+                     new_element_type = "Inducer")
+      existing <- squares()
+    }
+  }
+  
   make_plot <- function() {
     plot_data <- squares()
     
-    p <- ggplot() +
-      geom_rect(
-        data = plot_data,
-        aes(
-          xmin = x - side/2, xmax = x + side/2, 
-          ymin = y - side/2, ymax = y + side/2
-        ),
-        fill = "darkgray", color = "black"
-      ) +
+    color_scale <- c("Target" = input$target_color, 
+                     "Inducer" = input$inducer_color,
+                     "Distractor" = input$distractor_color)
+    
+    if (input$shape_type == "Squares") {
+      p <- ggplot() +
+        geom_rect(
+          data = plot_data,
+          aes(
+            xmin = x - side/2, xmax = x + side/2, 
+            ymin = y - side/2, ymax = y + side/2,
+            fill = element_type
+          ),
+          color = "black"
+        ) + 
+        scale_fill_manual(values = color_scale)
+    } else if (input$shape_type == "Circles") {
+      p <- ggplot() +
+        geom_circle(
+          data = plot_data,
+          aes(x0 = x, y0 = y, r = side/2, fill = element_type),
+          color = "black"
+        ) + 
+        scale_fill_manual(values = color_scale)
+    }
+    
+    p <- p +
       geom_text(
         data = plot_data,
         aes(x = x, y = y, label = label),
@@ -576,10 +690,7 @@ server <- function(input, output, session) {
     return(p)
   }
   
-  draw_line_func <- function(labels, labels_overlap) {
-    existing <- squares()
-    # labels <- line_path_labels()
-    # labels_overlap <- line_overlap_labels()
+  draw_line_func <- function(existing = squares(), labels, labels_overlap) {
     
     if (!all(labels %in% existing$label)) {
       missing_labels <- labels[!(labels %in% existing$label)]
@@ -588,6 +699,9 @@ server <- function(input, output, session) {
     } else {
       error_message("")
       line_data(existing %>% filter(label %in% labels) %>% arrange(match(label, labels)))
+      existing <- existing %>% 
+        mutate(element_type = ifelse(label %in% labels, "Target", "Distractor"))
+      squares(existing)
     }
     
     if (!all(labels_overlap %in% existing$label)) {
@@ -605,6 +719,28 @@ server <- function(input, output, session) {
       # plot_data <- squares()
       line_coords <- line_data()
       line_coords_overlap <- line_data_overlap()
+      
+      if (!is.null(line_coords_overlap) && nrow(line_coords_overlap) > 1) {
+        print("Putain 3")
+        print(line_coords_overlap)
+        
+        line_coords_overlap <- add_directional_columns(line_coords_overlap, input$shape_type)
+        sequence_table(line_coords_overlap)
+        
+        print("Putain 4")
+        print(line_coords_overlap)
+        
+        clutterness_list <- make_clutterness_dataframe(existing, line_coords_overlap, input$shape_type) 
+        clutterness_df(clutterness_list$clutterness_df)
+        clutterness_count_df(clutterness_list$clutterness_count_df)
+        
+        labels_overlap_plot <- unique(line_coords_overlap$label)
+        
+        inducer_list_labels <- unique(clutterness_list$clutterness_df$label)
+        squares(existing %>% mutate(element_type = ifelse(label %in% inducer_list_labels, "Inducer", element_type)))
+      }
+
+      
       p <- make_plot()
       
       if (!is.null(line_coords) && nrow(line_coords) > 1) {
@@ -618,17 +754,8 @@ server <- function(input, output, session) {
           ) +
           geom_point(data = line_coords[1, ], aes(x = x, y = y), color = "blue", size = 3)
       }
-      
-      if (!is.null(line_coords_overlap) && nrow(line_coords_overlap) > 1) {
-        line_coords_overlap <- add_directional_columns(line_coords_overlap)
-        sequence_table(line_coords_overlap)
         
-        clutterness_list <- make_clutterness_dataframe(existing, line_coords_overlap) 
-        clutterness_df(clutterness_list$clutterness_df)
-        clutterness_count_df(clutterness_list$clutterness_count_df)
-        
-        labels_overlap_plot <- unique(line_coords_overlap$label)
-        
+      if (!is.null(line_coords_overlap) && nrow(line_coords_overlap) > 1) {  
         for (label_current in labels_overlap_plot) {
           p <- p +
             geom_line(
@@ -651,11 +778,31 @@ server <- function(input, output, session) {
     })
   }
   
-  observeEvent(input$draw_line, {
-    draw_line_func(strsplit(input$line_path, "")[[1]], 
-                   strsplit(input$overlap_path, "")[[1]])
+  observeEvent(input$draw_line_only, {
+    existing = squares()
+    draw_line_func(existing, 
+                   strsplit(input$line_path, "")[[1]], 
+                   strsplit("", "")[[1]])
   })
   
+  observeEvent(input$draw_line_and_clutterness, {
+    existing = squares()
+    if(input$overlap_path == "") {
+      draw_line_func(existing,
+                     strsplit(input$line_path, "")[[1]], 
+                     strsplit(input$line_path, "")[[1]])
+      updateTextInput(session, "overlap_path", value = input$line_path)
+    } else {
+      draw_line_func(existing, 
+                     strsplit(input$line_path, "")[[1]], 
+                     strsplit(input$overlap_path, "")[[1]])
+    }
+  })
+  
+  observeEvent(input$generate_inducers, {
+    print("lalalala")
+    generate_inducers()
+  })
   
   output$plot <- renderPlot({
     req(nrow(squares()) > 0)

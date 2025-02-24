@@ -5,6 +5,9 @@ account: negativepotato
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 13894922
-bundleId: 9751263
+bundleId: 9755213
 url: https://negativepotato.shinyapps.io/corsi_layout_shiny_app/
 version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|Old_Codes.R|Plots/_blank.png|Plots/Plot_1_2531.png|Plots/Plot_1_blank.png|Sandbox.R|sequence_data_2.csv|squares_data_2.csv|squares_data.csv
